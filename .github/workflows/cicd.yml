@@ -1,0 +1,131 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+
+jobs:
+  # 1️⃣ Build & Push
+  build-and-push:
+    runs-on: ubuntu-latest
+    name: Docker 이미지 빌드 및 푸시
+
+    steps:
+      - name: 📦 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 🧩 QEMU 설정 (멀티 아키텍처 지원)
+        uses: docker/setup-qemu-action@v3
+
+      - name: ⚙️ Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 🏷️ 메타데이터 생성
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: 🏗️ Docker 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web.dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # 2️⃣ Deploy
+  deploy:
+    runs-on: ubuntu-latest
+    name: EC2에 배포
+    needs: build-and-push
+
+    steps:
+      - name: 📦 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 🚀 SSH 접속 후 배포
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script_stop: true
+          script: |
+            set -Eeuo pipefail
+
+            echo "[1] 배포 디렉토리 확인 중..."
+            APP_DIR=${{ secrets.APP_DIR }}
+            mkdir -p "$APP_DIR"
+
+            echo "[2] 리포지토리 최신화"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch --all --prune
+              git reset --hard origin/${{ github.ref_name }}
+            fi
+            cd "$APP_DIR"
+
+            echo "[3] .env 생성"
+            rm -f .env
+            cat > .env << 'EOF'
+            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+            DJANGO_DEBUG=False
+            DJANGO_ALLOWED_HOSTS=${{ secrets.DJANGO_ALLOWED_HOSTS }}
+            SEOUL_SUBWAY_API_KEY=${{ secrets.SEOUL_SUBWAY_API_KEY }}
+
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
+
+            MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+            MYSQL_USER=${{ secrets.MYSQL_USER }}
+            MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            EOF
+
+            echo "[4] 최신 이미지 Pull"
+            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+            SHA_TAG=${{ github.sha }}
+            docker pull "$IMAGE:$SHA_TAG" || docker pull "$IMAGE:latest"
+
+            echo "[5] Docker Compose 배포 시작"
+            COMPOSE_FILE="docker/compose.prod.yml"
+
+            # 최신 이미지로 교체
+            tmpfile=$(mktemp)
+            sed "s|\(image: \).*|\1$IMAGE:$SHA_TAG|g" "$COMPOSE_FILE" > "$tmpfile"
+            mv "$tmpfile" "$COMPOSE_FILE"
+
+            docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+
+            echo "[6] Django 마이그레이션 및 정적 파일 수집"
+            docker compose -f "$COMPOSE_FILE" exec -T web \
+              python manage.py migrate --settings=config.settings.prod
+            docker compose -f "$COMPOSE_FILE" exec -T web \
+              python manage.py collectstatic --noinput --settings=config.settings.prod
+            docker compose -f "$COMPOSE_FILE" exec -T web \
+              python manage.py apply_socialapp --settings=config.settings.prod
+
+            echo "[7] 오래된 이미지 정리"
+            docker image prune -af
+
+            echo "✅ 배포 완료!"
