@@ -78,6 +78,47 @@ jobs:
       - name: 📦 코드 체크아웃
         uses: actions/checkout@v4
 
+      - name: 🔐 Create env.prod locally (safe)
+        run: |
+          cat > .env.prod << 'EOF'
+          DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          DJANGO_DEBUG=False
+          DJANGO_ALLOWED_HOSTS=${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
+
+          SEOUL_SUBWAY_API_KEY=${{ secrets.SEOUL_SUBWAY_API_KEY }}
+
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+
+          # RDS(MySQL)
+          MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+
+          # 호환 키 (settings 네이밍 혼선 대비)
+          DB_NAME=${{ secrets.MYSQL_DATABASE }}
+          DB_USER=${{ secrets.MYSQL_USER }}
+          DB_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DATABASE }}
+          MYSQL_HOST=${{ secrets.DB_HOST }}
+          MYSQL_PORT=${{ secrets.DB_PORT }}
+
+          # prod에서 .env 자동 로딩 금지 (django-environ 사용 시)
+          READ_DOT_ENV_FILE=False
+          EOF
+      - name: 📤 env.prod를 EC2에 업로드하기
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: ".env.prod"
+          target: "${{ secrets.APP_DIR }}/subwaylive/.env.prod"
+          strip_components: 0
+
       - name: 🚀 SSH 접속 후 배포
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -87,6 +128,7 @@ jobs:
           script_stop: true
           script: |
             set -Eeuo pipefail
+            export DEBIAN_FRONTEND=noninteractive
 
             APP_DIR=${{ secrets.APP_DIR }}
             PROJECT_DIR=subwaylive
@@ -94,126 +136,55 @@ jobs:
             COMPOSE_FILE="$COMPOSE_DIR/compose.prod.yml"
             IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
             SHA_TAG=${{ github.sha }}
-            
-            export DEBIAN_FRONTEND=noninteractive    # ← 비대화식 고정
 
-            # 0) Docker/Compose 점검 + git 설치까지
-            if ! command -v docker >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y ca-certificates curl gnupg
-              # ... (Docker repo 설정 동일)
-              sudo apt-get update -y
-              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-            fi
-
-            # ✅ git이 없으면 설치
-            if ! command -v git >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y git
-            fi
-
-            # 디버깅에 도움되는 출력 추가
             echo "whoami: $(whoami)"
-            echo "pwd: $(pwd)"
             echo "APP_DIR: ${APP_DIR}"
             test -n "${APP_DIR}" || { echo "APP_DIR 비어있음"; exit 2; }
 
-            
-            echo "📦 [0] Docker/Compose 점검 및 설치"
+            # 0) Docker/Compose 설치 점검 (+git)
             if ! command -v docker >/dev/null 2>&1; then
-              echo "→ Docker 미설치: 설치 진행 (Ubuntu)"
-              # 공식 Docker 리포지토리 등록
               sudo apt-get update -y
               sudo apt-get install -y ca-certificates curl gnupg
               sudo install -m 0755 -d /etc/apt/keyrings
               curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-              echo \
-                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-                https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-                | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
               sudo apt-get update -y
-              # docker engine + compose v2 플러그인 설치
               sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-              # 현재 사용자(예: ubuntu)를 docker 그룹에 추가 (선택)
-              sudo usermod -aG docker $USER || true
-              # 비대화식 세션에서는 그룹 재적용이 안 되므로, 아래에서는 계속 sudo 사용
+            fi
+            if ! command -v git >/dev/null 2>&1; then
+              sudo apt-get update -y && sudo apt-get install -y git
             fi
 
-            echo "📁 [1] 배포 디렉토리 준비: $APP_DIR"
+            # 1) 배포 디렉토리
             sudo mkdir -p "$APP_DIR"
-            sudo chown -R "$USER":"$USER" "$APP_DIR"
+            sudo chown -R "$USER:$USER" "$APP_DIR"
 
-            echo "🌀 [2] 리포지토리 최신화"
-            echo "[디버그] APP_DIR 상태:"
-            ls -al "$APP_DIR" || true
-            echo "[디버그] .git 유무:"
-            test -d "$APP_DIR/.git" && echo ".git exists" || echo ".git missing"
-
-            # 상황별로 안전하게 갱신
+            # 2) 리포지토리 최신화
             if [ -d "$APP_DIR/.git" ]; then
-              echo "→ git repo 감지: fetch & reset"
               git -C "$APP_DIR" fetch --all --prune
               git -C "$APP_DIR" reset --hard origin/${{ github.ref_name }}
             else
-              echo "→ git repo 아님: 디렉토리 상태 점검"
               if [ -d "$APP_DIR" ] && [ "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
-                echo "  - $APP_DIR 가 비어있지 않음 → 기존 파일 정리"
-                sudo rm -rf "$APP_DIR"/*
-                sudo rm -rf "$APP_DIR"/.[!.]* || true
-                sudo rm -rf "$APP_DIR"/..?* || true
+                sudo rm -rf "$APP_DIR"/* "$APP_DIR"/.[!.]* "$APP_DIR"/..?* || true
               fi
-              echo "→ fresh clone 실행"
               git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
             fi
-            cd "$APP_DIR"
 
+            # 3) 업로드된 .env.prod 권한 확정
+            chmod 600 "$APP_DIR/$PROJECT_DIR/.env.prod"
+            echo "[env.prod head]"
+            head -n 20 "$APP_DIR/$PROJECT_DIR/.env.prod" | sed 's/=.*/=<hidden>/' || true
 
-            echo "🔐 [3] .env.prod 생성 → $APP_DIR/$PROJECT_DIR/.env.prod"
-            sudo bash -lc 'cat > "$APP_DIR/$PROJECT_DIR/.env.prod" << "EOF"
-            DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-            DJANGO_DEBUG=False
-            DJANGO_ALLOWED_HOSTS=${{ secrets.DJANGO_ALLOWED_HOSTS }}
-            SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
-            SEOUL_SUBWAY_API_KEY=${{ secrets.SEOUL_SUBWAY_API_KEY }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-            MYSQL_USER=${{ secrets.MYSQL_USER }}
-            MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            DB_NAME=${{ secrets.MYSQL_DATABASE }}
-            DB_USER=${{ secrets.MYSQL_USER }}
-            DB_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-            MYSQL_DB=${{ secrets.MYSQL_DATABASE }}
-            MYSQL_HOST=${{ secrets.DB_HOST }}
-            MYSQL_PORT=${{ secrets.DB_PORT }}
-            READ_DOT_ENV_FILE=False
-            EOF
-            chmod 600 "$APP_DIR/$PROJECT_DIR/.env.prod"'
-
-
-            echo "🐳 [4] 최신 이미지 Pull"
+            # 4) 이미지 Pull
             sudo docker pull "$IMAGE:$SHA_TAG" || sudo docker pull "$IMAGE:latest"
 
-            # 이미지 태그 변수
-            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
-            SHA_TAG=${{ github.sha }}
-
-            echo "🧾 [5.5] compose 전용 env 파일 생성"
+            # 5) compose 전용 env 파일 생성 (.deploy.env)
             DEPLOY_ENV="$COMPOSE_DIR/.deploy.env"
             echo "APP_IMAGE=$IMAGE:$SHA_TAG" | sudo tee "$DEPLOY_ENV" > /dev/null
-            echo "[debug] cat .deploy.env ====="
-            sudo cat "$DEPLOY_ENV" || true
-            echo "============================"
+            echo "[debug] .deploy.env:" && cat "$DEPLOY_ENV"
 
-            echo "🚀 [6] Docker Compose 배포"
+            # 6) (선실행) migrate / collectstatic / apply_socialapp  -- run --rm
             cd "$COMPOSE_DIR"
-            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
-
-            echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp (run --rm)"
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py migrate --settings=config.settings.prod'
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
@@ -221,10 +192,14 @@ jobs:
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py apply_socialapp --settings=config.settings.prod'
 
+            # 7) 서비스 기동
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 
+            # 8) 상태/로그 스니펫
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" ps
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" logs --tail=60 web || true
 
-
-            echo "🧹 [8] 이미지 정리"
+            # 9) 이미지 청소
             sudo docker image prune -af || true
 
-            echo "✅ 완료"
+            echo "✅ 배포 완료"
