@@ -115,9 +115,9 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: ".env.prod"
-          target: "${{ secrets.APP_DIR }}/subwaylive/.env.prod"
-          strip_components: 0
+          source: ".env.prod"                         # ← 파일
+          target: "${{ secrets.APP_DIR }}/subwaylive" # ← 디렉토리
+          overwrite: true
 
       - name: 🚀 SSH 접속 후 배포
         uses: appleboy/ssh-action@v1.2.0
