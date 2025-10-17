@@ -84,12 +84,38 @@ jobs:
           script: |
             set -Eeuo pipefail
 
-            echo "📁 [1] 배포 디렉토리 확인"
             APP_DIR=${{ secrets.APP_DIR }}
             PROJECT_DIR=subwaylive
             COMPOSE_DIR="$APP_DIR/$PROJECT_DIR/docker"
             COMPOSE_FILE="$COMPOSE_DIR/compose.prod.yml"
-            mkdir -p "$APP_DIR"
+            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+            SHA_TAG=${{ github.sha }}
+
+            echo "📦 [0] Docker/Compose 점검 및 설치"
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "→ Docker 미설치: 설치 진행 (Ubuntu)"
+              # 공식 Docker 리포지토리 등록
+              sudo apt-get update -y
+              sudo apt-get install -y ca-certificates curl gnupg
+              sudo install -m 0755 -d /etc/apt/keyrings
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+              echo \
+                "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+                https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+                | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+              sudo apt-get update -y
+              # docker engine + compose v2 플러그인 설치
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+              # 현재 사용자(예: ubuntu)를 docker 그룹에 추가 (선택)
+              sudo usermod -aG docker $USER || true
+              # 비대화식 세션에서는 그룹 재적용이 안 되므로, 아래에서는 계속 sudo 사용
+            fi
+
+            echo "📁 [1] 배포 디렉토리 준비: $APP_DIR"
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER":"$USER" "$APP_DIR"
 
             echo "🌀 [2] 리포지토리 최신화"
             if [ ! -d "$APP_DIR/.git" ]; then
@@ -101,9 +127,7 @@ jobs:
             fi
             cd "$APP_DIR"
 
-            echo "🔐 [3] .env 생성 (📌 위치: $APP_DIR/$PROJECT_DIR/.env)"
-            # ✅ compose가 ../.env 를 바라보므로 subwaylive/.env 에 써야 함
-            rm -f "$APP_DIR/$PROJECT_DIR/.env"
+            echo "🔐 [3] .env 생성 → $APP_DIR/$PROJECT_DIR/.env"
             cat > "$APP_DIR/$PROJECT_DIR/.env" << 'EOF'
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DJANGO_DEBUG=False
@@ -123,29 +147,27 @@ jobs:
             EOF
 
             echo "🐳 [4] 최신 이미지 Pull"
-            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}   # 예: docker.io/najungh/subwaylive
-            SHA_TAG=${{ github.sha }}
-            docker pull "$IMAGE:$SHA_TAG" || docker pull "$IMAGE:latest"
+            sudo docker pull "$IMAGE:$SHA_TAG" || sudo docker pull "$IMAGE:latest"
 
-            echo "🚀 [5] Docker Compose 배포 시작"
-            # ✅ image 라인 SHA로 교체
+            echo "🧩 [5] compose 파일 이미지 태그 치환"
             tmpfile=$(mktemp)
             sed "s|\(image: \).*|\1$IMAGE:$SHA_TAG|g" "$COMPOSE_FILE" > "$tmpfile"
             mv "$tmpfile" "$COMPOSE_FILE"
 
-            # 상대경로 문제 없도록 compose 디렉토리에서 실행
+            echo "🚀 [6] Docker Compose 배포"
             cd "$COMPOSE_DIR"
-            docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+            # compose v2: 'docker compose'
+            sudo docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
-            echo "🛠️ [6] Django 마이그레이션/정적/소셜앱"
-            docker compose -f "$COMPOSE_FILE" exec -T web \
+            echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"
+            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py migrate --settings=config.settings.prod
-            docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py collectstatic --noinput --settings=config.settings.prod
-            docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py apply_socialapp --settings=config.settings.prod
 
-            echo "🧹 [7] 오래된 이미지 정리"
-            docker image prune -af
+            echo "🧹 [8] 이미지 정리"
+            sudo docker image prune -af || true
 
-            echo "✅ 배포 완료!"
+            echo "✅ 완료"
