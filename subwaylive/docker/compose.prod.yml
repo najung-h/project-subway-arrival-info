@@ -2,7 +2,7 @@ services:
   web:
     image: ${APP_IMAGE}              # ← 여기만 변수로 주입
     env_file:
-      - ../.env
+      - ../.env.prod
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.prod     # ✅ prod 강제
       - PYTHONUNBUFFERED=1
