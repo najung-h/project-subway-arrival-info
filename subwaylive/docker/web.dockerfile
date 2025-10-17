@@ -1,3 +1,4 @@
+# subwqylive/docker/web.dockerfile
 # ====== 1) Build stage ======
 FROM python:3.11-slim AS builder
 
@@ -13,8 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# (컨텍스트가 루트라면 경로 주의)
-COPY subwaylive/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 
 # ====== 2) Runtime stage ======
