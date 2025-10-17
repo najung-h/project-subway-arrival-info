@@ -171,34 +171,28 @@ jobs:
 
 
             echo "🔐 [3] .env.prod 생성 → $APP_DIR/$PROJECT_DIR/.env.prod"
-            cat > "$APP_DIR/$PROJECT_DIR/.env.prod" << 'EOF'
+            sudo bash -lc 'cat > "$APP_DIR/$PROJECT_DIR/.env.prod" << "EOF"
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DJANGO_DEBUG=False
             DJANGO_ALLOWED_HOSTS=${{ secrets.DJANGO_ALLOWED_HOSTS }}
             SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
-
             SEOUL_SUBWAY_API_KEY=${{ secrets.SEOUL_SUBWAY_API_KEY }}
-
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-
-            # RDS(MySQL)
             MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
             MYSQL_USER=${{ secrets.MYSQL_USER }}
             MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
             DB_HOST=${{ secrets.DB_HOST }}
             DB_PORT=${{ secrets.DB_PORT }}
-
-            # 호환 키 (settings 네이밍 혼선 대비)
             DB_NAME=${{ secrets.MYSQL_DATABASE }}
             DB_USER=${{ secrets.MYSQL_USER }}
             DB_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
             MYSQL_DB=${{ secrets.MYSQL_DATABASE }}
             MYSQL_HOST=${{ secrets.DB_HOST }}
             MYSQL_PORT=${{ secrets.DB_PORT }}
-
             READ_DOT_ENV_FILE=False
             EOF
+            chmod 600 "$APP_DIR/$PROJECT_DIR/.env.prod"'
 
 
             echo "🐳 [4] 최신 이미지 Pull"
