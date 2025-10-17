@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 
 # 앱 소스만 복사 (컨텍스트가 루트라고 가정)
-COPY subwaylive/. .
+COPY . .
 
 # 비루트 사용자
 RUN useradd -m app && chown -R app:app /app
