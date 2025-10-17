@@ -26,11 +26,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmariadb3 \
   && rm -rf /var/lib/apt/lists/*
 
-# 빌더에서 설치된 패키지 반영
+
+# 🔒 비루트 유저 생성 (그룹 먼저, 홈=/app, 셸 없음)
+RUN groupadd -r app \
+ && useradd -r -g app -d /app -s /usr/sbin/nologin app \
+ && id app && getent passwd app
+
 COPY --from=builder /usr/local /usr/local
 
-# 앱 소스 복사 (compose: context=.. 이므로 이 Dockerfile에서의 컨텍스트는 subwaylive 루트)
-RUN useradd -m wishfast
+# 소스 복사 (app 사용자 소유)
 COPY --chown=app:app . .
 
 USER app
