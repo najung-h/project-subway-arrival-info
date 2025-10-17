@@ -1,0 +1,37 @@
+{% extends "arrivals/base.html" %}
+{% block title %}{{ station }} 실시간 | 빠르길 {% endblock %}
+{% block content %}
+<div class="bg-white rounded-2xl shadow p-6">
+  <h2 class="text-lg font-semibold mb-4">‘{{ station }}’ 도착 정보</h2>
+
+  {% if result.error %}
+    <div class="text-red-600">{{ result.error }}</div>
+  {% else %}
+    {% if result.groups %}
+      <div class="space-y-6">
+        {% for key, items in result.groups.items %}
+          {% with line=key.0 dir=key.1 %}
+          <div>
+            <div class="flex items-center gap-3 mb-2">
+              <span class="text-sm rounded px-2 py-1 bg-gray-100">호선ID: {{ line }}</span>
+              <span class="text-sm rounded px-2 py-1 bg-gray-100">{{ dir }}</span>
+            </div>
+            <div class="grid md:grid-cols-2 gap-3">
+              {% for it in items %}
+                <div class="border rounded-xl p-3">
+                  <div class="font-medium">{{ it.trainLineNm }}</div>
+                  <div class="text-sm text-gray-600">{{ it.arvlMsg2 }}</div>
+                  <div class="text-xs text-gray-400">예정(초): {{ it.barvlDt }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endwith %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div>도착 정보가 없습니다.</div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

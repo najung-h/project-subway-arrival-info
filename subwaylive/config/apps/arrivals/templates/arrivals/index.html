@@ -1,0 +1,12 @@
+{% extends "arrivals/base.html" %}
+{% block title %}역 검색 | 빠르길{% endblock %}
+{% block content %}
+<div class="bg-white rounded-2xl shadow p-6">
+  <h1 class="text-xl font-semibold mb-4">실시간 도착 정보</h1>
+  <form method="get" action="{% url 'arrivals:arrival' %}" class="flex gap-2">
+    {{ form.station }}
+    <button class="px-4 py-2 rounded-lg bg-black text-white">검색</button>
+  </form>
+  <p class="text-gray-500 text-sm mt-2">예) 신도림, 서울대입구, 강남 …</p>
+</div>
+{% endblock %}
