@@ -53,7 +53,11 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=sha
+            # ✅ 배포 스크립트에서 쓰는 그대로의 생SHA 태그도 함께 푸시
+            type=raw,value=${{ github.sha }}
+            # (선택) 기존 sha- 접두사 태그도 유지하고 싶다면 추가
+            # type=sha
+
 
       - name: 🏗️ Docker 이미지 빌드 및 푸시
         uses: docker/build-push-action@v6
@@ -188,14 +192,11 @@ jobs:
             echo "🐳 [4] 최신 이미지 Pull"
             sudo docker pull "$IMAGE:$SHA_TAG" || sudo docker pull "$IMAGE:latest"
 
-            echo "🧩 [5] compose 파일 이미지 태그 치환"
-            tmpfile=$(mktemp)
-            sed "s|\(image: \).*|\1$IMAGE:$SHA_TAG|g" "$COMPOSE_FILE" > "$tmpfile"
-            mv "$tmpfile" "$COMPOSE_FILE"
-
             echo "🚀 [6] Docker Compose 배포"
             cd "$COMPOSE_DIR"
-            # compose v2: 'docker compose'
+
+            # ✅ sed 제거! 환경변수로만 주입
+            export APP_IMAGE="$IMAGE:$SHA_TAG"
             sudo docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
             echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"

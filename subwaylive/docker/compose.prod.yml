@@ -1,25 +1,22 @@
 version: "3.9"
 services:
   web:
-    image: <deploy에서 sed로 태그 치환됨>
-    # build 섹션은 prod에선 보통 제거
+    image: ${APP_IMAGE}     # ← 배포 스크립트가 주입
     env_file:
       - ../.env
     command: ["gunicorn","config.wsgi:application","-b","0.0.0.0:8000","-w","3"]
     volumes:
       - static_volume:/app/staticfiles
-    # depends_on: [mysql_db]   # ❌ RDS만 쓸 땐 제거
     networks: [app_net]
     restart: unless-stopped
 
   nginx:
-    image: nginx:1.27
+    image: nginx:1.27       # ← 고정 (치환 금지)
     ports: ["80:80"]
     volumes:
       - static_volume:/static
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - web
+    depends_on: [web]
     networks: [app_net]
     restart: unless-stopped
 
@@ -28,3 +25,4 @@ volumes:
 
 networks:
   app_net:
+
