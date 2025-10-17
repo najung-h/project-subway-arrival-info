@@ -192,43 +192,29 @@ jobs:
             echo "🐳 [4] 최신 이미지 Pull"
             sudo docker pull "$IMAGE:$SHA_TAG" || sudo docker pull "$IMAGE:latest"
 
+            # 이미지 태그 변수
+            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+            SHA_TAG=${{ github.sha }}
+
+            echo "🧾 [5.5] compose 전용 env 파일 생성"
+            DEPLOY_ENV="$COMPOSE_DIR/.deploy.env"
+            echo "APP_IMAGE=$IMAGE:$SHA_TAG" | sudo tee "$DEPLOY_ENV" > /dev/null
+            echo "[debug] cat .deploy.env ====="
+            sudo cat "$DEPLOY_ENV" || true
+            echo "============================"
+
             echo "🚀 [6] Docker Compose 배포"
             cd "$COMPOSE_DIR"
-            # APP_IMAGE 변수는 이미 .env 또는 --preserve-env로 주입된 상태여야 함
-            sudo docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
-
-            echo "⏳ [6.1] web 컨테이너 기동 대기 (최대 60초)"
-            WEB_ID=$(sudo docker compose -f "$COMPOSE_FILE" ps -q web)
-            for i in $(seq 1 30); do
-              STATE=$(sudo docker inspect -f '{{.State.Status}}' "$WEB_ID" 2>/dev/null || echo "unknown")
-              echo "  - [$i] state=$STATE"
-              if [ "$STATE" = "running" ]; then
-                OK=1; break
-              elif [ "$STATE" = "exited" ] || [ "$STATE" = "dead" ]; then
-                echo "❌ web 컨테이너가 즉시 종료되었습니다. 최근 로그:"
-                sudo docker logs --tail=200 "$WEB_ID" || true
-                exit 3
-              fi
-              sleep 2
-            done
-            if [ -z "${OK:-}" ]; then
-              echo "❌ web 컨테이너가 running 상태가 아닙니다. 최근 로그:"
-              sudo docker logs --tail=200 "$WEB_ID" || true
-              exit 4
-            fi
-
-
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 
             echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"
-            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
-              docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
               python manage.py migrate --settings=config.settings.prod
-            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
-              docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
               python manage.py collectstatic --noinput --settings=config.settings.prod
-            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
-              docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
               python manage.py apply_socialapp --settings=config.settings.prod
+
 
 
             echo "🧹 [8] 이미지 정리"
