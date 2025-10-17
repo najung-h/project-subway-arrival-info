@@ -59,7 +59,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./${{ env.PROJECT_DIR }} 
-          file: ./${{ env.PROJECT_DIR }}/docker/web.dockerfile
+          file: ./${{ env.PROJECT_DIR }}/docker/web.Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -90,7 +90,31 @@ jobs:
             COMPOSE_FILE="$COMPOSE_DIR/compose.prod.yml"
             IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
             SHA_TAG=${{ github.sha }}
+            
+            export DEBIAN_FRONTEND=noninteractive    # ← 비대화식 고정
 
+            # 0) Docker/Compose 점검 + git 설치까지
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y ca-certificates curl gnupg
+              # ... (Docker repo 설정 동일)
+              sudo apt-get update -y
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            fi
+
+            # ✅ git이 없으면 설치
+            if ! command -v git >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y git
+            fi
+
+            # 디버깅에 도움되는 출력 추가
+            echo "whoami: $(whoami)"
+            echo "pwd: $(pwd)"
+            echo "APP_DIR: ${APP_DIR}"
+            test -n "${APP_DIR}" || { echo "APP_DIR 비어있음"; exit 2; }
+
+            
             echo "📦 [0] Docker/Compose 점검 및 설치"
             if ! command -v docker >/dev/null 2>&1; then
               echo "→ Docker 미설치: 설치 진행 (Ubuntu)"

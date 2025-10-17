@@ -5,15 +5,16 @@ ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", default="subway-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": env("MYSQL_DATABASE"),
-        "USER": env("MYSQL_USER"),
-        "PASSWORD": env("MYSQL_PASSWORD"),
-        "HOST": env("DB_HOST", default="localhost"),
-        "PORT": env.int("DB_PORT", default=3306),
+        "NAME": env.str("MYSQL_DATABASE"),
+        "USER": env.str("MYSQL_USER"),
+        "PASSWORD": env.str("MYSQL_PASSWORD"),
+        "HOST": env.str("DB_HOST"),   # ✅ RDS
+        "PORT": env.int("DB_PORT", 3306),
         "OPTIONS": {"charset": "utf8mb4"},
-        "CONN_MAX_AGE": 60,
+        "CONN_MAX_AGE": env.int("DB_CONN_MAX_AGE", 60),
     }
 }
+
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 CSRF_TRUSTED_ORIGINS = [f"https://{env('SITE_DOMAIN', default='subway-info-easy.site')}"]

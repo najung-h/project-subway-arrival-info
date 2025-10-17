@@ -1,17 +1,16 @@
 version: "3.9"
 services:
   web:
-    build:
-      context: ..
-      dockerfile: docker/web.Dockerfile
+    image: <deploy에서 sed로 태그 치환됨>
+    # build 섹션은 prod에선 보통 제거
     env_file:
       - ../.env
-    command: ["gunicorn", "config.wsgi:application", "-b", "0.0.0.0:8000", "-w", "3"]
+    command: ["gunicorn","config.wsgi:application","-b","0.0.0.0:8000","-w","3"]
     volumes:
       - static_volume:/app/staticfiles
-    depends_on:
-      - mysql_db
+    # depends_on: [mysql_db]   # ❌ RDS만 쓸 땐 제거
     networks: [app_net]
+    restart: unless-stopped
 
   nginx:
     image: nginx:1.27
@@ -22,23 +21,10 @@ services:
     depends_on:
       - web
     networks: [app_net]
-
-  # 운영에서는 RDS 사용을 권장: 이 mysql_db는 테스트/임시
-  mysql_db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci"]
-    volumes:
-      - db_data:/var/lib/mysql
-    networks: [app_net]
+    restart: unless-stopped
 
 volumes:
   static_volume:
-  db_data:
 
 networks:
   app_net:
