@@ -38,7 +38,9 @@ COPY --from=builder /install /usr/local
 COPY . .
 
 # 비루트 사용자
-RUN useradd -m app && chown -R app:app /app
+RUN useradd -m app
+COPY --chown=app:app . .
+
 USER app
 
 EXPOSE 8000
