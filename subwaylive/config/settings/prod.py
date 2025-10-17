@@ -1,6 +1,6 @@
 from .base import *
 DEBUG = False
-ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", default="wisheasy.site").split(",")]
+ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", default="subway-info-easy.site").split(",")]
 
 DATABASES = {
     "default": {
@@ -16,4 +16,4 @@ DATABASES = {
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-CSRF_TRUSTED_ORIGINS = [f"https://{env('SITE_DOMAIN', default='wisheasy.site')}"]
+CSRF_TRUSTED_ORIGINS = [f"https://{env('SITE_DOMAIN', default='subway-info-easy.site')}"]
