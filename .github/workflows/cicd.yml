@@ -142,14 +142,29 @@ jobs:
             sudo chown -R "$USER":"$USER" "$APP_DIR"
 
             echo "🌀 [2] 리포지토리 최신화"
-            if [ ! -d "$APP_DIR/.git" ]; then
-              git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
+            echo "[디버그] APP_DIR 상태:"
+            ls -al "$APP_DIR" || true
+            echo "[디버그] .git 유무:"
+            test -d "$APP_DIR/.git" && echo ".git exists" || echo ".git missing"
+
+            # 상황별로 안전하게 갱신
+            if [ -d "$APP_DIR/.git" ]; then
+              echo "→ git repo 감지: fetch & reset"
+              git -C "$APP_DIR" fetch --all --prune
+              git -C "$APP_DIR" reset --hard origin/${{ github.ref_name }}
             else
-              cd "$APP_DIR"
-              git fetch --all --prune
-              git reset --hard origin/${{ github.ref_name }}
+              echo "→ git repo 아님: 디렉토리 상태 점검"
+              if [ -d "$APP_DIR" ] && [ "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
+                echo "  - $APP_DIR 가 비어있지 않음 → 기존 파일 정리"
+                sudo rm -rf "$APP_DIR"/*
+                sudo rm -rf "$APP_DIR"/.[!.]* || true
+                sudo rm -rf "$APP_DIR"/..?* || true
+              fi
+              echo "→ fresh clone 실행"
+              git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
             fi
             cd "$APP_DIR"
+
 
             echo "🔐 [3] .env 생성 → $APP_DIR/$PROJECT_DIR/.env"
             cat > "$APP_DIR/$PROJECT_DIR/.env" << 'EOF'
