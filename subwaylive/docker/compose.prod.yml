@@ -1,7 +1,6 @@
-version: "3.9"
 services:
   web:
-    image: ${APP_IMAGE}     # ← 배포 스크립트가 주입
+    image: ${APP_IMAGE}              # ← 여기만 변수로 주입
     env_file:
       - ../.env
     command: ["gunicorn","config.wsgi:application","-b","0.0.0.0:8000","-w","3"]
@@ -11,7 +10,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:1.27       # ← 고정 (치환 금지)
+    image: nginx:1.27                # 고정 이미지 (치환 금지)
     ports: ["80:80"]
     volumes:
       - static_volume:/static
@@ -25,4 +24,3 @@ volumes:
 
 networks:
   app_net:
-

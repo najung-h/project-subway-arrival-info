@@ -194,10 +194,9 @@ jobs:
 
             echo "🚀 [6] Docker Compose 배포"
             cd "$COMPOSE_DIR"
+            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
+              docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
-            # ✅ sed 제거! 환경변수로만 주입
-            export APP_IMAGE="$IMAGE:$SHA_TAG"
-            sudo docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
             echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"
             sudo docker compose -f "$COMPOSE_FILE" exec -T web \
