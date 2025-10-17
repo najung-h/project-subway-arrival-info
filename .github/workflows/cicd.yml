@@ -170,29 +170,26 @@ jobs:
             cd "$APP_DIR"
 
 
-            echo "🔐 [3] env.prod 생성 → $APP_DIR/$PROJECT_DIR/env.prod"
-            cat > "$APP_DIR/$PROJECT_DIR/env.prod" << 'EOF'
-            # Django
+            echo "🔐 [3] .env.prod 생성 → $APP_DIR/$PROJECT_DIR/.env.prod"
+            cat > "$APP_DIR/$PROJECT_DIR/.env.prod" << 'EOF'
             DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
             DJANGO_DEBUG=False
             DJANGO_ALLOWED_HOSTS=${{ secrets.DJANGO_ALLOWED_HOSTS }}
             SITE_DOMAIN=${{ secrets.SITE_DOMAIN }}
 
-            # 외부 API
             SEOUL_SUBWAY_API_KEY=${{ secrets.SEOUL_SUBWAY_API_KEY }}
 
-            # OAuth
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
 
-            # DB (양쪽 네이밍 모두 지원: settings 불일치 대비)
+            # RDS(MySQL)
             MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
             MYSQL_USER=${{ secrets.MYSQL_USER }}
             MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
             DB_HOST=${{ secrets.DB_HOST }}
             DB_PORT=${{ secrets.DB_PORT }}
 
-            # 호환 키 (settings에서 DB_NAME/USER/PASSWORD/HOST/PORT를 참조할 수 있는 경우)
+            # 호환 키 (settings 네이밍 혼선 대비)
             DB_NAME=${{ secrets.MYSQL_DATABASE }}
             DB_USER=${{ secrets.MYSQL_USER }}
             DB_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
@@ -200,7 +197,6 @@ jobs:
             MYSQL_HOST=${{ secrets.DB_HOST }}
             MYSQL_PORT=${{ secrets.DB_PORT }}
 
-            # prod에서는 .env 파일 자체를 읽지 않도록 신호
             READ_DOT_ENV_FILE=False
             EOF
 
