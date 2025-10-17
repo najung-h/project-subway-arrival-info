@@ -207,13 +207,14 @@ jobs:
             cd "$COMPOSE_DIR"
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 
-            echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"
-            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
-              python manage.py migrate --settings=config.settings.prod
-            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
-              python manage.py collectstatic --noinput --settings=config.settings.prod
-            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T web \
-              python manage.py apply_socialapp --settings=config.settings.prod
+            echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp (run --rm)"
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
+              sh -lc 'python manage.py migrate --settings=config.settings.prod'
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
+              sh -lc 'python manage.py collectstatic --noinput --settings=config.settings.prod'
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
+              sh -lc 'python manage.py apply_socialapp --settings=config.settings.prod'
+
 
 
 

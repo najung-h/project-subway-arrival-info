@@ -30,9 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local /usr/local
 
 # 앱 소스 복사 (compose: context=.. 이므로 이 Dockerfile에서의 컨텍스트는 subwaylive 루트)
-RUN useradd -m app
+RUN useradd -m wishfast
 COPY --chown=app:app . .
 
 USER app
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi:application", "-b", "0.0.0.0:8000", "-w", "3", "--timeout", "60"]
+CMD ["gunicorn","config.wsgi:application","-b","0.0.0.0:8000","-w","3","--timeout","90","--log-file","-"]  # ✅ stdout
