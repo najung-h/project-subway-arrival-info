@@ -199,11 +199,14 @@ jobs:
 
 
             echo "🛠️ [7] Django migrate / collectstatic / apply_socialapp"
-            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
+              docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py migrate --settings=config.settings.prod
-            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
+              docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py collectstatic --noinput --settings=config.settings.prod
-            sudo docker compose -f "$COMPOSE_FILE" exec -T web \
+            sudo --preserve-env=APP_IMAGE env APP_IMAGE="$IMAGE:$SHA_TAG" \
+              docker compose -f "$COMPOSE_FILE" exec -T web \
               python manage.py apply_socialapp --settings=config.settings.prod
 
             echo "🧹 [8] 이미지 정리"
