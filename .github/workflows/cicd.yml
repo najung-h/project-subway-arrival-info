@@ -132,10 +132,18 @@ jobs:
             set -Eeuo pipefail
             export DEBIAN_FRONTEND=noninteractive
 
-            # ✅ 0) 경로/이미지 변수 "먼저" 정의
-            APP_DIR=${{ secrets.APP_DIR }}
+            # ✅ 0) 새로운 배포 경로 정의 (원자적 배포)
+            # 예: /home/ubuntu/app/releases/20241018035010
+            #     /home/ubuntu/app/current -> /home/ubuntu/app/releases/20241018035010 (심볼릭 링크)
+            BASE_DIR=${{ secrets.APP_DIR }}
+            RELEASE_DIR="$BASE_DIR/releases/$(date +%Y%m%d%H%M%S)"
+            CURRENT_DIR="$BASE_DIR/current"
+
+            # ✅ 기존 변수들을 새로운 경로 기준으로 재정의
+            APP_DIR="$RELEASE_DIR" # 이제 APP_DIR은 매번 바뀌는 새 릴리즈 폴더
             PROJECT_DIR=subwaylive
             COMPOSE_DIR="$APP_DIR/$PROJECT_DIR/docker"
+            SHARED_DIR="$BASE_DIR/shared" # .env.prod, certbot 볼륨 등 공용 파일을 저장할 디렉토리
             COMPOSE_FILE="$COMPOSE_DIR/compose.prod.yml"
             # ✅ Secret 대신 레포지토리 이름으로 이미지 이름을 동적으로 생성
             # 예: docker.io/my-docker-id/project-subway-arrival-info
@@ -143,8 +151,8 @@ jobs:
             SHA_TAG=${{ github.sha }}
 
             echo "whoami: $(whoami)"
-            echo "APP_DIR: ${APP_DIR}"
-            test -n "${APP_DIR}" || { echo "APP_DIR 비어있음"; exit 2; }
+            echo "BASE_DIR: ${BASE_DIR}"
+            test -n "${BASE_DIR}" || { echo "BASE_DIR(secrets.APP_DIR) 비어있음"; exit 2; }
 
             # 1) Docker/Compose 설치 점검 (+git)
             if ! command -v docker >/dev/null 2>&1; then
@@ -159,33 +167,21 @@ jobs:
             if ! command -v git >/dev/null 2>&1; then
               sudo apt-get update -y && sudo apt-get install -y git
             fi
+            # 2) 새로운 릴리즈 디렉토리 생성 및 코드 클론
+            echo "🚀 Creating new release directory: $RELEASE_DIR"
+            mkdir -p "$RELEASE_DIR"
+            git clone --depth=1 https://github.com/${{ github.repository }} "$RELEASE_DIR"
 
-            # 2) 배포 디렉토리
-            sudo mkdir -p "$APP_DIR"
-            sudo chown -R "$USER:$USER" "$APP_DIR"
+            # 3) 공용 디렉토리 및 .env.prod 파일 링크 설정
+            mkdir -p "$SHARED_DIR"
+            # scp로 업로드된 .env.prod를 공용 위치로 이동시키고, 릴리즈 폴더에 심볼릭 링크 생성
+            sudo mv "$BASE_DIR/$PROJECT_DIR/.env.prod" "$SHARED_DIR/.env.prod" || echo "Moving .env.prod (might not exist on first run)"
+            ln -s "$SHARED_DIR/.env.prod" "$RELEASE_DIR/$PROJECT_DIR/.env.prod"
 
-            # 3) 레포지토리 최신화
-            if [ -d "$APP_DIR/.git" ]; then
-              git -C "$APP_DIR" fetch --all --prune
-              git -C "$APP_DIR" reset --hard origin/${{ github.ref_name }}
-            else
-              # ⚠️ 빈 디렉토리만 정리 (업로드된 .env.prod 보호)
-              if [ -d "$APP_DIR" ] && [ -z "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
-                true  # 비어있으면 그대로
-              fi
-              git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
-            fi
-
-            # ✅ 4) .env.prod 존재/권한 확인 (이제 경로가 유효)
-            if [ ! -f "$APP_DIR/$PROJECT_DIR/.env.prod" ]; then
-              echo "[ERROR] $APP_DIR/$PROJECT_DIR/.env.prod 이 없습니다. (scp 단계 확인)"
-              ls -al "$APP_DIR/$PROJECT_DIR" || true
+            if [ ! -f "$RELEASE_DIR/$PROJECT_DIR/.env.prod" ]; then
+              echo "[ERROR] .env.prod link failed. Check scp target path."
               exit 3
             fi
-            chmod 600 "$APP_DIR/$PROJECT_DIR/.env.prod"
-            sed -i 's/\r$//' "$APP_DIR/$PROJECT_DIR/.env.prod"
-            echo "[env.prod head]"
-            head -n 20 "$APP_DIR/$PROJECT_DIR/.env.prod" | sed 's/=.*/=<hidden>/' || true
 
             # ✅ 5) 이제 안전하게 로드(set -a는 .env 내 변수들을 export)
             set -a
@@ -235,6 +231,13 @@ jobs:
               ' || { echo "[ensure-db] failed to ensure database exists"; exit 4; }
             echo "[ensure-db] done."
 
+            # 7.8) 이전 배포의 컨테이너 중지 (새 배포 전)
+            # CURRENT_DIR이 존재할 경우에만 실행
+            if [ -d "$CURRENT_DIR" ]; then
+              echo "[cleanup] stopping old containers from $CURRENT_DIR..."
+              cd "$CURRENT_DIR/$PROJECT_DIR/docker" && sudo docker compose down --remove-orphans || true
+            fi
+
             # 8) (선실행) migrate / collectstatic / apply_socialapp
             cd "$COMPOSE_DIR"
 
@@ -258,18 +261,26 @@ jobs:
               -d ${{ secrets.SITE_DOMAIN }} \
               -d www.${{ secrets.SITE_DOMAIN }} \
               --email ${{ secrets.CERT_EMAIL }} \
-              --agree-tos --no-eff-email --force-renewal || { echo "[ssl] certbot failed, but continuing to start services..."; }
-
             echo "[ssl] done."
             
-            # 9) 서비스 기동
+            # 9) 심볼릭 링크 교체 (배포 활성화)
+            echo "🔗 Activating new release: $RELEASE_DIR"
+            ln -snf "$RELEASE_DIR" "$CURRENT_DIR"
+
+            # 10) 최종 서비스 기동 (새로운 릴리즈 경로에서)
+            echo "🚀 Starting services from new release..."
+            cd "$CURRENT_DIR/$PROJECT_DIR/docker"
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 
-            # 10) 상태/로그
+            # 11) 상태/로그
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" ps
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" logs --tail=60 web || true
 
-            # 11) 이미지 청소
-            sudo docker image prune -af || true
+            # 12) 오래된 릴리즈 정리 (최신 3개만 남김)
+            echo "🧹 Cleaning up old releases..."
+            cd "$BASE_DIR/releases" && ls -t | tail -n +4 | xargs -r sudo rm -rf
+
+            # 13) 이미지 청소
+            sudo docker image prune -f --filter "dangling=true" || true
 
             echo "✅ 배포 완료"
