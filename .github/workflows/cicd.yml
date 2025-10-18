@@ -189,8 +189,12 @@ jobs:
             set +a
 
             # ✅ 포트 기본값 보장 (DB_PORT → MYSQL_PORT → 3306)
+            DB_HOST="${DB_HOST:-${MYSQL_HOST:-}}"
             DB_PORT="${DB_PORT:-${MYSQL_PORT:-3306}}"
-            export DB_PORT
+            MYSQL_DATABASE="${MYSQL_DATABASE:-${DB_NAME:-${MYSQL_DB:-}}}"
+
+            export DB_HOST DB_PORT MYSQL_DATABASE
+
 
             # (선택) RDS Admin 자격도 여기서 export
             export RDS_ADMIN_USER='${{ secrets.RDS_ADMIN_USER }}'
@@ -208,24 +212,24 @@ jobs:
             # 7.5) Ensure Database exists
             echo "[ensure-db] creating database if not exists..."
             sudo docker run --rm \
-              -e DB_HOST -e DB_PORT -e RDS_ADMIN_USER -e RDS_ADMIN_PASSWORD -e MYSQL_DATABASE \
+              -e DB_HOST="$DB_HOST" \
+              -e DB_PORT="$DB_PORT" \
+              -e RDS_ADMIN_USER="$RDS_ADMIN_USER" \
+              -e RDS_ADMIN_PASSWORD="$RDS_ADMIN_PASSWORD" \
+              -e MYSQL_DATABASE="$MYSQL_DATABASE" \
               mysql:8.0 \
               sh -lc '
                 set -e
-                # 필수 환경변수 검증
                 : "${DB_HOST:?missing DB_HOST}"
+                : "${DB_PORT:?missing DB_PORT}"
                 : "${RDS_ADMIN_USER:?missing RDS_ADMIN_USER}"
                 : "${RDS_ADMIN_PASSWORD:?missing RDS_ADMIN_PASSWORD}"
                 : "${MYSQL_DATABASE:?missing MYSQL_DATABASE}"
-
-                # 포트 기본값 보장
-                DB_PORT="${DB_PORT:-3306}"
-
                 echo "[ensure-db] host=$DB_HOST port=$DB_PORT db=$MYSQL_DATABASE"
                 mysql -h "$DB_HOST" -P "$DB_PORT" -u "$RDS_ADMIN_USER" -p"$RDS_ADMIN_PASSWORD" \
                   -e "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-              ' \
-              || { echo "[ensure-db] failed to ensure database exists"; exit 4; }
+              ' || { echo "[ensure-db] failed to ensure database exists"; exit 4; }
+            echo "[ensure-db] done."
 
             # 8) (선실행) migrate / collectstatic / apply_socialapp
             cd "$COMPOSE_DIR"
