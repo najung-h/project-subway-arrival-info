@@ -247,6 +247,16 @@ jobs:
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py apply_socialapp --settings=config.settings.prod' || echo "[warn] apply_socialapp failed, continuing..."
 
+            # 8.5) SSL 인증서 발급/갱신
+            echo "[ssl] issue/renew ssl certificate..."
+            sudo docker compose -f "$COMPOSE_FILE" run --rm certbot certonly --webroot \
+              --webroot-path /var/www/certbot \
+              -d ${{ secrets.SITE_DOMAIN }} \
+              -d www.${{ secrets.SITE_DOMAIN }} \
+              --email ${{ secrets.CERT_EMAIL }} \
+              --agree-tos --no-eff-email --force-renewal
+            echo "[ssl] done."
+            
             # 9) 서비스 기동
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 

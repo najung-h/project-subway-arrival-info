@@ -20,18 +20,32 @@ services:
 
   nginx:
     image: nginx:1.27                # 고정 이미지 (치환 금지)
-    ports: ["80:80"]
+    ports:
+      - "80:80"
+      - "443:443"  # ✅ HTTPS 포트 추가
     volumes:
       - static_volume:/static
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_conf:/etc/letsencrypt  # ✅ Certbot 설정 볼륨
+      - certbot_www:/var/www/certbot   # ✅ Certbot 인증용 볼륨
     depends_on:
       web:
         condition: service_healthy 
     networks: [app_net]
     restart: unless-stopped
 
+  # ✅ Certbot 서비스 추가 (인증서 발급/갱신용)
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    command: ["--version"] # 평소에는 실행되지 않도록 더미 명령 설정
+
 volumes:
   static_volume:
+  certbot_conf:
+  certbot_www:
 
 networks:
   app_net:
