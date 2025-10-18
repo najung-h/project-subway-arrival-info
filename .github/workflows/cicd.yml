@@ -211,7 +211,7 @@ jobs:
 
             # 7.5) Ensure Database exists
             echo "[ensure-db] creating database if not exists..."
-            sudo docker run --rm --preserve-env \
+            sudo -E docker run --rm \
               -e DB_HOST="$DB_HOST" \
               -e DB_PORT="$DB_PORT" \
               -e RDS_ADMIN_USER="$RDS_ADMIN_USER" \
