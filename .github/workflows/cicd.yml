@@ -247,14 +247,19 @@ jobs:
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py apply_socialapp --settings=config.settings.prod' || echo "[warn] apply_socialapp failed, continuing..."
 
-            # 8.5) SSL 인증서 발급/갱신
+            # ✅ 8.5) Nginx를 먼저 기동하여 Certbot 인증 요청을 받을 준비
+            echo "[nginx] starting nginx for certbot challenge..."
+            sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d nginx
+
+            # ✅ 8.6) SSL 인증서 발급/갱신
             echo "[ssl] issue/renew ssl certificate..."
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm certbot certonly --webroot \
               --webroot-path /var/www/certbot \
               -d ${{ secrets.SITE_DOMAIN }} \
               -d www.${{ secrets.SITE_DOMAIN }} \
               --email ${{ secrets.CERT_EMAIL }} \
-              --agree-tos --no-eff-email --force-renewal
+              --agree-tos --no-eff-email --force-renewal || { echo "[ssl] certbot failed, but continuing to start services..."; }
+
             echo "[ssl] done."
             
             # 9) 서비스 기동
