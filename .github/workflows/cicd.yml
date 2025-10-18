@@ -50,7 +50,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+          # ✅ Secret 대신 레포지토리 이름으로 이미지 이름을 동적으로 생성
+          # 예: docker.io/my-docker-id/project-subway-arrival-info
+          images: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
           tags: |
             type=raw,value=latest
             # ✅ 배포 스크립트에서 쓰는 그대로의 생SHA 태그도 함께 푸시
@@ -135,7 +137,9 @@ jobs:
             PROJECT_DIR=subwaylive
             COMPOSE_DIR="$APP_DIR/$PROJECT_DIR/docker"
             COMPOSE_FILE="$COMPOSE_DIR/compose.prod.yml"
-            IMAGE=${{ env.REGISTRY }}/${{ secrets.IMAGE_NAME }}
+            # ✅ Secret 대신 레포지토리 이름으로 이미지 이름을 동적으로 생성
+            # 예: docker.io/my-docker-id/project-subway-arrival-info
+            IMAGE=${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
             SHA_TAG=${{ github.sha }}
 
             echo "whoami: $(whoami)"
