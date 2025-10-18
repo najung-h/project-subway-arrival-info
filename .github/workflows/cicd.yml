@@ -127,18 +127,10 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script_stop: true
           script: |
-            # .env.prod 로부터 값 로드
-            set -a
-            . "$APP_DIR/$PROJECT_DIR/.env.prod"
-            set +a
-
-            # RDS Admin 자격 (Secrets)
-            export RDS_ADMIN_USER='${{ secrets.RDS_ADMIN_USER }}'
-            export RDS_ADMIN_PASSWORD='${{ secrets.RDS_ADMIN_PASSWORD }}'
-
             set -Eeuo pipefail
             export DEBIAN_FRONTEND=noninteractive
 
+            # ✅ 0) 경로/이미지 변수 "먼저" 정의
             APP_DIR=${{ secrets.APP_DIR }}
             PROJECT_DIR=subwaylive
             COMPOSE_DIR="$APP_DIR/$PROJECT_DIR/docker"
@@ -150,7 +142,7 @@ jobs:
             echo "APP_DIR: ${APP_DIR}"
             test -n "${APP_DIR}" || { echo "APP_DIR 비어있음"; exit 2; }
 
-            # 0) Docker/Compose 설치 점검 (+git)
+            # 1) Docker/Compose 설치 점검 (+git)
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y ca-certificates curl gnupg
@@ -164,44 +156,60 @@ jobs:
               sudo apt-get update -y && sudo apt-get install -y git
             fi
 
-            # 1) 배포 디렉토리
+            # 2) 배포 디렉토리
             sudo mkdir -p "$APP_DIR"
             sudo chown -R "$USER:$USER" "$APP_DIR"
 
-            # 2) 리포지토리 최신화
+            # 3) 레포지토리 최신화
             if [ -d "$APP_DIR/.git" ]; then
               git -C "$APP_DIR" fetch --all --prune
               git -C "$APP_DIR" reset --hard origin/${{ github.ref_name }}
             else
-              if [ -d "$APP_DIR" ] && [ "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
-                sudo rm -rf "$APP_DIR"/* "$APP_DIR"/.[!.]* "$APP_DIR"/..?* || true
+              # ⚠️ 빈 디렉토리만 정리 (업로드된 .env.prod 보호)
+              if [ -d "$APP_DIR" ] && [ -z "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
+                true  # 비어있으면 그대로
               fi
               git clone --depth=1 https://github.com/${{ github.repository }} "$APP_DIR"
             fi
 
-            # 3) 업로드된 .env.prod 권한 확정
+            # ✅ 4) .env.prod 존재/권한 확인 (이제 경로가 유효)
+            if [ ! -f "$APP_DIR/$PROJECT_DIR/.env.prod" ]; then
+              echo "[ERROR] $APP_DIR/$PROJECT_DIR/.env.prod 이 없습니다. (scp 단계 확인)"
+              ls -al "$APP_DIR/$PROJECT_DIR" || true
+              exit 3
+            fi
             chmod 600 "$APP_DIR/$PROJECT_DIR/.env.prod"
             echo "[env.prod head]"
             head -n 20 "$APP_DIR/$PROJECT_DIR/.env.prod" | sed 's/=.*/=<hidden>/' || true
 
-            # 4) 이미지 Pull
+            # ✅ 5) 이제 안전하게 로드(set -a는 .env 내 변수들을 export)
+            set -a
+            . "$APP_DIR/$PROJECT_DIR/.env.prod"
+            set +a
+
+            # (선택) RDS Admin 자격도 여기서 export
+            export RDS_ADMIN_USER='${{ secrets.RDS_ADMIN_USER }}'
+            export RDS_ADMIN_PASSWORD='${{ secrets.RDS_ADMIN_PASSWORD }}'
+
+            # 6) 이미지 Pull
             sudo docker pull "$IMAGE:$SHA_TAG" || sudo docker pull "$IMAGE:latest"
 
-            # 5) compose 전용 env 파일 생성 (.deploy.env)
+            # 7) compose 전용 env 파일 생성 (.deploy.env)
+            mkdir -p "$COMPOSE_DIR"
             DEPLOY_ENV="$COMPOSE_DIR/.deploy.env"
             echo "APP_IMAGE=$IMAGE:$SHA_TAG" | sudo tee "$DEPLOY_ENV" > /dev/null
             echo "[debug] .deploy.env:" && cat "$DEPLOY_ENV"
 
-            # 5.5) Ensure Database exists (using mysql:8.0 client container)
+            # 7.5) Ensure Database exists
             echo "[ensure-db] creating database if not exists..."
             sudo docker run --rm \
+              -e DB_HOST -e DB_PORT -e RDS_ADMIN_USER -e RDS_ADMIN_PASSWORD -e MYSQL_DATABASE \
               mysql:8.0 \
               sh -lc 'mysql -h "$DB_HOST" -P "$DB_PORT" -u "$RDS_ADMIN_USER" -p"$RDS_ADMIN_PASSWORD" \
-                -e "CREATE DATABASE IF NOT EXISTS \`'"$MYSQL_DATABASE"'\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' \
-              || { echo "[ensure-db] failed to ensure database exists"; exit 3; }
+                -e "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' \
+              || { echo "[ensure-db] failed to ensure database exists"; exit 4; }
 
-
-            # 6) (선실행) migrate / collectstatic / apply_socialapp  -- run --rm
+            # 8) (선실행) migrate / collectstatic / apply_socialapp
             cd "$COMPOSE_DIR"
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py migrate --settings=config.settings.prod'
@@ -210,14 +218,14 @@ jobs:
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm web \
               sh -lc 'python manage.py apply_socialapp --settings=config.settings.prod'
 
-            # 7) 서비스 기동
+            # 9) 서비스 기동
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans
 
-            # 8) 상태/로그 스니펫
+            # 10) 상태/로그
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" ps
             sudo docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" logs --tail=60 web || true
 
-            # 9) 이미지 청소
+            # 11) 이미지 청소
             sudo docker image prune -af || true
 
             echo "✅ 배포 완료"
