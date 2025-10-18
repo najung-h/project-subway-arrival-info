@@ -127,6 +127,15 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script_stop: true
           script: |
+            # .env.prod 로부터 값 로드
+            set -a
+            . "$APP_DIR/$PROJECT_DIR/.env.prod"
+            set +a
+
+            # RDS Admin 자격 (Secrets)
+            export RDS_ADMIN_USER='${{ secrets.RDS_ADMIN_USER }}'
+            export RDS_ADMIN_PASSWORD='${{ secrets.RDS_ADMIN_PASSWORD }}'
+
             set -Eeuo pipefail
             export DEBIAN_FRONTEND=noninteractive
 
@@ -182,6 +191,15 @@ jobs:
             DEPLOY_ENV="$COMPOSE_DIR/.deploy.env"
             echo "APP_IMAGE=$IMAGE:$SHA_TAG" | sudo tee "$DEPLOY_ENV" > /dev/null
             echo "[debug] .deploy.env:" && cat "$DEPLOY_ENV"
+
+            # 5.5) Ensure Database exists (using mysql:8.0 client container)
+            echo "[ensure-db] creating database if not exists..."
+            sudo docker run --rm \
+              mysql:8.0 \
+              sh -lc 'mysql -h "$DB_HOST" -P "$DB_PORT" -u "$RDS_ADMIN_USER" -p"$RDS_ADMIN_PASSWORD" \
+                -e "CREATE DATABASE IF NOT EXISTS \`'"$MYSQL_DATABASE"'\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"' \
+              || { echo "[ensure-db] failed to ensure database exists"; exit 3; }
+
 
             # 6) (선실행) migrate / collectstatic / apply_socialapp  -- run --rm
             cd "$COMPOSE_DIR"

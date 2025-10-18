@@ -21,14 +21,17 @@ DB_PASSWORD = env.str("DB_PASSWORD", default=env.str("MYSQL_PASSWORD", default=N
 DB_HOST = env.str("DB_HOST", default=env.str("MYSQL_HOST", default="localhost"))
 DB_PORT = env.int("DB_PORT", default=env.int("MYSQL_PORT", default=3306))
 
+
+
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": DB_NAME,
-        "USER": DB_USER,
-        "PASSWORD": DB_PASSWORD,
-        "HOST": DB_HOST,
-        "PORT": DB_PORT,
+        "NAME": env.str("MYSQL_DATABASE", default=env.str("DB_NAME", default=env.str("MYSQL_DB", default=""))),
+        "USER": env.str("MYSQL_USER", default=env.str("DB_USER", default="")),
+        "PASSWORD": env.str("MYSQL_PASSWORD", default=env.str("DB_PASSWORD", default="")),
+        "HOST": env.str("DB_HOST", default=env.str("MYSQL_HOST", default="localhost")),
+        "PORT": env.int("DB_PORT", default=int(env.int("MYSQL_PORT", default=3306))),
         "OPTIONS": {"charset": "utf8mb4"},
     }
 }
